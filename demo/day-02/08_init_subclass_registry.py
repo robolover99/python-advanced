@@ -14,38 +14,63 @@ Run:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 1: Basic plugin registry with __init_subclass__
-# ══════════════════════════════════════════════════════════════════════════════
 #
-# __init_subclass__ is called on the BASE CLASS every time a class
-# inherits from it. This gives the base class a chance to register the
-# subclass — without any decorator or explicit call in the subclass.
+# How __init_subclass__ works:
+#
+#   When Python processes a class statement like
+#       class CSVFormatter(Formatter, format_name="csv"): ...
+#   it calls Formatter.__init_subclass__(cls=CSVFormatter, format_name="csv")
+#   on the BASE CLASS immediately — at the moment the subclass body is parsed.
+#
+# This fires ONCE PER SUBCLASS, automatically, with no decorator or explicit
+# call in the subclass. The base class is a fully passive registry.
+#
+# Keyword arguments in the class statement (format_name="csv") are forwarded
+# directly to __init_subclass__ as keyword parameters. Forward extras with
+# **kwargs and pass them on via super() for multi-level inheritance.
+#
+# Practical result:
+#   Define a subclass anywhere → it's in the registry immediately.
+#   Import the module that defines the subclass → it's in the registry.
+#   No central "register all plugins" call required.
+# ══════════════════════════════════════════════════════════════════════════════
 
 class Formatter:
     """Base class for all output formatters.
 
-    Subclasses must:
-      - Define a class attribute `format_name` (the registry key).
+    Protocol for subclasses:
+      - Pass format_name="key" in the class statement — becomes the registry key.
       - Implement the `format(rows)` method.
 
-    Registration is automatic — define a subclass, it's in the registry.
+    Registration is automatic. Defining a subclass (or importing a module that
+    defines one) is sufficient — no explicit registration call is needed.
+
+    Lookup: Formatter.get("csv")  →  returns a ready-to-use CSVFormatter instance.
     """
 
     _registry: dict[str, type["Formatter"]] = {}
 
     def __init_subclass__(cls, format_name: str, **kwargs):
+        # Called automatically when any subclass is defined.
+        # `cls` = the new subclass being registered.
+        # `format_name` = pulled from the class statement keyword argument.
+        # `**kwargs` = forwarded to super() to support further subclassing.
         super().__init_subclass__(**kwargs)
         if format_name in cls._registry:
             raise ValueError(
                 f"Formatter {format_name!r} is already registered by "
                 f"{cls._registry[format_name].__name__}."
             )
-        cls._registry[format_name] = cls
+        cls._registry[format_name] = cls  # store class (not instance) in registry
         cls.format_name = format_name
         print(f"  [registry] Registered formatter: {format_name!r} → {cls.__name__}")
 
     @classmethod
     def get(cls, name: str) -> "Formatter":
-        """Retrieve a formatter instance by name."""
+        """Look up a formatter by key and return a fresh instance.
+
+        Raises KeyError with the list of available keys if name is unknown.
+        """
         if name not in cls._registry:
             available = sorted(cls._registry)
             raise KeyError(
@@ -108,8 +133,13 @@ def demo_basic_registry():
         {"product": "gadget", "qty": 20, "price": 24.99},
     ]
 
+    # By the time we reach here, all three [registry] lines have already been
+    # printed — registration happened at class-definition time above, not here.
     print(f"\nAvailable formatters: {Formatter.available()}")
 
+    # Flow for each formatter:
+    #   Formatter.get(name)  → looks up class in _registry → calls class() to
+    #   create an instance → returns it → .format(data) runs the subclass method
     for name in Formatter.available():
         fmt = Formatter.get(name)
         print(f"\n--- {name.upper()} ---")
@@ -159,6 +189,8 @@ def demo_add_plugin_at_runtime():
     print("PART 4: Adding a new plugin without changing Formatter")
     print("=" * 55)
 
+    # Defining TSVFormatter HERE (inside a function) triggers __init_subclass__
+    # immediately. The registration print fires as this class body is parsed.
     class TSVFormatter(Formatter, format_name="tsv"):
         """Tab-separated values. Added dynamically."""
 

@@ -14,16 +14,34 @@ Run:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 1: Class decorator that adds metadata
-# ══════════════════════════════════════════════════════════════════════════════
 #
-# A class decorator is a callable that receives a class and returns a class.
-# It can add attributes, wrap methods, or register the class — without
-# requiring the class to inherit from anything.
+# A class decorator is just a callable that receives a CLASS and returns a CLASS.
+# It follows exactly the same pattern as a function decorator:
+#
+#   @register_component(kind="extractor")
+#   class S3Extractor: ...
+#
+# is equivalent to:
+#   S3Extractor = register_component(kind="extractor")(S3Extractor)
+#
+# Flow:
+#   1. register_component("extractor") is called → returns `decorator`
+#   2. decorator(S3Extractor) is called → stamps cls.component_kind = "extractor"
+#   3. decorator returns cls unchanged (same class object, now with extra attrs)
+#   4. S3Extractor still works exactly as before — no inheritance needed.
+# ══════════════════════════════════════════════════════════════════════════════
 
 def register_component(kind: str):
-    """Decorator factory: stamps a class with a component kind label."""
+    """Decorator factory: stamps a class with a component kind label.
+
+    Returns a decorator that adds `component_kind` and `component_name`
+    as class attributes. The class itself is returned unchanged — no
+    wrapping, no new type, just attribute mutation.
+    """
 
     def decorator(cls):
+        # Mutate the class in-place: add two new class-level attributes.
+        # The class is not replaced or wrapped — it's returned as-is, just enriched.
         cls.component_kind = kind
         cls.component_name = cls.__name__
         return cls
@@ -61,6 +79,8 @@ def demo_metadata_decorator():
     print("PART 1: Class decorator adding metadata")
     print("=" * 55)
 
+    # At this point each class already has component_kind stamped on it —
+    # the decorator ran at class-definition time (import time), not here.
     for cls in (S3Extractor, DropNullsTransformer, BigQueryLoader):
         print(f"{cls.__name__:30s} kind={cls.component_kind!r}")
 
@@ -71,12 +91,21 @@ def demo_metadata_decorator():
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 2: Class decorator that adds a method
+#
+# A decorator can also INJECT a new method into the class.
+# Flow for @add_describe:
+#   1. Python parses the class body of RunSummary.
+#   2. add_describe(RunSummary) is called.
+#   3. A `describe` function is defined and assigned to cls.describe.
+#   4. cls (the same RunSummary object, now with describe) is returned.
+#   5. RunSummary.describe exists — works like any regular instance method.
 # ══════════════════════════════════════════════════════════════════════════════
 
 def add_describe(cls):
-    """Add a describe() method to any class that has a __dataclass_fields__ dict
-    or explicit fields listed in _describe_fields.
-    Works as a post-hoc enhancement — no inheritance required.
+    """Inject a describe() method into any class.
+
+    Uses vars(self) to introspect instance attributes at call time —
+    works on any class regardless of its inheritance hierarchy.
     """
 
     def describe(self) -> str:
@@ -111,13 +140,23 @@ def demo_add_method():
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 3: Class decorator that enforces a convention
+#
+# Class decorators fire at CLASS-DEFINITION TIME, not at instantiation.
+# This means violations are caught at import time — the earliest possible
+# moment — rather than when an instance is first created.
+#
+# Flow for @require_docstring:
+#   1. Python finishes parsing the class body.
+#   2. require_docstring(cls) is called immediately.
+#   3. It checks cls.__doc__ — if missing or blank, raises TypeError NOW.
+#   4. The error surfaces as a module import error before any code uses the class.
 # ══════════════════════════════════════════════════════════════════════════════
 
 def require_docstring(cls):
-    """Raise an error at class definition time if the class has no docstring.
+    """Raise TypeError at class-definition time if the class has no docstring.
 
-    Useful for enforcing documentation standards in large teams.
-    Runs at import time (definition time) — not at instantiation.
+    Runs at import time (not instantiation). Violations are caught as early
+    as possible — useful for enforcing documentation standards in large teams.
     """
     if not cls.__doc__ or not cls.__doc__.strip():
         raise TypeError(

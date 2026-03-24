@@ -18,16 +18,37 @@ import functools
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 1: Minimal decorator — the pattern made explicit
+#
+# A decorator is a function that:
+#   1. Receives another function as its argument.
+#   2. Defines a wrapper function that adds behaviour before/after.
+#   3. Returns the wrapper (a plain function object).
+#
+# The `@make_loud` syntax is syntactic sugar for:  add = make_loud(add)
+# After that line, `add` IS `wrapper`. Every future call to add() goes
+# through wrapper, which calls the original func internally.
+#
+# Execution flow for  add(3, 4)  after decoration:
+#   add(3, 4)
+#   → wrapper(3, 4)              (‘add’ now refers to wrapper)
+#   → prints "→ calling add"
+#   → result = func(3, 4)        (func is the ORIGINAL add, captured by closure)
+#   → prints "← add returned 7"
+#   → returns 7
 # ══════════════════════════════════════════════════════════════════════════════
 
 def make_loud(func):
-    """A decorator that announces when a function is called and returns."""
+    """Wrap func to announce its call and return value.
+
+    func is captured in the wrapper's closure — it lives as long as wrapper
+    does, even after make_loud() has returned.
+    """
 
     def wrapper(*args, **kwargs):
         print(f"  → calling {func.__name__}")
-        result = func(*args, **kwargs)
+        result = func(*args, **kwargs)  # call the original function
         print(f"  ← {func.__name__} returned {result!r}")
-        return result
+        return result  # always return so callers still get the value
 
     return wrapper
 
@@ -43,15 +64,29 @@ def demo_minimal_decorator():
     print("PART 1: Minimal decorator")
     print("=" * 55)
 
+    # At this point `add` IS `wrapper` (the name was rebound at definition time)
     result = add(3, 4)
     print(f"Final result: {result}")
     print()
+    # Make the equivalence explicit for learners:
     print("The @make_loud syntax is equivalent to:")
     print("  add = make_loud(add)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 2: functools.wraps — preserving function identity
+#
+# Without @functools.wraps, `wrapper.__name__` is literally "wrapper" and
+# `wrapper.__doc__` is None. This breaks:
+#   - help(), docstrings, auto-generated API docs
+#   - unittest.mock assertions that check function names
+#   - any debugging tool that reads __name__ or __qualname__
+#
+# @functools.wraps(func) copies these attributes from func onto wrapper:
+#   __name__, __qualname__, __doc__, __module__, __dict__, __wrapped__
+#
+# The extra __wrapped__ attribute lets you unwrap decorators to reach the
+# original function (used by inspect.unwrap()).
 # ══════════════════════════════════════════════════════════════════════════════
 
 def timing_without_wraps(func):
@@ -108,10 +143,25 @@ def demo_functools_wraps():
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 3: Logging decorator
+#
+# A real-world decorator that logs calls, results, and exceptions.
+# Demonstrates the full wrapper pattern:
+#   - Capture args/kwargs for logging before the call.
+#   - Use try/except inside the wrapper to intercept any exception,
+#     log it, then re-raise so callers still see the error.
 # ══════════════════════════════════════════════════════════════════════════════
 
 def log_call(func):
-    """Log function entry, exit, and any exception raised."""
+    """Log function entry, exit, and any exception raised.
+
+    Flow for a successful call:
+      CALL divide(10, 4)  ← logged before calling
+      OK   divide → 2.5   ← logged after returning
+
+    Flow for a failing call:
+      CALL divide(10, 0)
+      ERROR divide raised ZeroDivisionError: ...  ← logged, then re-raised
+    """
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -152,10 +202,28 @@ def demo_logging_decorator():
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 4: Decorator factory — decorator that accepts arguments
+#
+# When a decorator needs configuration (e.g. max_attempts=3), you add
+# one more level of nesting:
+#
+#   retry(max_attempts=3)         ← outer call returns the decorator
+#   decorator(func)               ← decorator receives the function
+#   wrapper(*args, **kwargs)      ← wrapper is what actually runs each call
+#
+# Three levels: factory → decorator → wrapper
+#
+# The @retry(max_attempts=3) syntax is equivalent to:
+#   flaky_fetch = retry(max_attempts=3)(flaky_fetch)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def retry(max_attempts: int = 3, delay_sec: float = 0.0):
-    """Decorator factory: retry a function up to max_attempts times on exception."""
+    """Decorator factory: retry a function up to max_attempts times on exception.
+
+    Nesting summary:
+      retry(3, 0.0)   → returns `decorator`  (closes over max_attempts, delay_sec)
+      decorator(func) → returns `wrapper`    (closes over func)
+      wrapper(...)    → runs func in a retry loop
+    """
 
     def decorator(func):
         @functools.wraps(func)
@@ -200,6 +268,22 @@ def demo_decorator_factory():
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 5: Stacking decorators
+#
+# When you stack decorators, they apply BOTTOM-UP at definition time:
+#
+#   @log_call
+#   @timing
+#   def process_batch(...): ...
+#
+# is equivalent to:
+#   process_batch = log_call(timing(process_batch))
+#
+# So the call order at runtime is TOP-DOWN:
+#   process_batch(...)  →  log_call’s wrapper runs first
+#                        →  it calls timing’s wrapper
+#                            →  which calls the original process_batch
+#                            ←  timing prints elapsed
+#                        ←  log_call prints OK + result
 # ══════════════════════════════════════════════════════════════════════════════
 
 @log_call
