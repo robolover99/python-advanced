@@ -70,7 +70,14 @@ async def demo_call_vs_await():
 #   3. Closes the loop and cleans up
 #
 # It's the bridge between synchronous top-level code and async coroutines.
-# You call asyncio.run() once at the program entry point — not nested.
+# You call asyncio.run() ONCE at the program entry point — never nested.
+# Nesting it raises: RuntimeError: This event loop is already running.
+#
+# The live call is at the bottom of this file:
+#   asyncio.run(main())     ← this is the ONLY asyncio.run() in the program
+#
+# Everything below (demo_event_loop, demo_cooperative, …) is already INSIDE
+# that event loop, so they use 'await' — not another asyncio.run().
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def fetch_data(source: str, delay: float) -> dict:
@@ -81,11 +88,19 @@ async def fetch_data(source: str, delay: float) -> dict:
 
 async def demo_event_loop():
     print("\n" + "=" * 60)
-    print("PART 2: The event loop drives coroutines")
+    print("PART 2: asyncio.run() and sequential awaits")
     print("=" * 60)
     print()
+    print("  asyncio.run(main()) at the bottom of this file:")
+    print("    1. Creates a new event loop")
+    print("    2. Runs main() to completion")
+    print("    3. Closes the loop and cleans up")
+    print()
+    print("  This function is already INSIDE that loop — it uses 'await',")
+    print("  not another asyncio.run() (that would raise RuntimeError).")
+    print()
 
-    print("  Fetching data sequentially (each await suspends this coroutine):")
+    print("  Sequential fetches — each 'await' suspends this coroutine:")
     t0 = time.perf_counter()
 
     r1 = await fetch_data("users_db",    delay=0.10)
@@ -97,9 +112,9 @@ async def demo_event_loop():
         print(f"    {r['source']:15s}  rows={r['rows']}  delay={r['delay']}s")
     print(f"\n  Total: {elapsed:.3f}s  ← sequential awaits add up (0.1 × 3 = 0.3s)")
     print()
-    print("  Each 'await asyncio.sleep(...)' suspends this coroutine and lets")
-    print("  the event loop do other work — but nothing ELSE is scheduled here,")
-    print("  so it just waits. Day 6 teaches how to run them concurrently.")
+    print("  Each 'await asyncio.sleep(...)' yields to the event loop — but")
+    print("  nothing ELSE is scheduled here, so it just waits in turn.")
+    print("  Module 6 file 04 shows how to run all three concurrently.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
