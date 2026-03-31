@@ -15,11 +15,11 @@ Run:
 
     # See full coverage report:
     pytest demo/module-08/09_coverage.py -v \
-        --cov=demo/module-08/09_coverage --cov-report=term-missing
+        --cov=demo --cov-report=term-missing
 
     # Fail if coverage drops below threshold:
     pytest demo/module-08/09_coverage.py \
-        --cov=demo/module-08/09_coverage --cov-report=term-missing --cov-fail-under=90
+        --cov=demo --cov-report=term-missing --cov-fail-under=90
 """
 
 import sys
@@ -186,7 +186,7 @@ class TestProcessBatchSecondPass:
 # DEMO: reading coverage output + key concepts
 # ══════════════════════════════════════════════════════════════════════════════
 
-def demo_coverage_output() -> None:
+def demo_coverage_output() -> None:  # pragma: no cover
     print("\n" + "═" * 78)
     print("  READING pytest --cov OUTPUT")
     print("═" * 78)
@@ -228,12 +228,12 @@ def demo_coverage_output() -> None:
     print("  Try this command from the python-advanced/ directory:")
     print()
     print("  pytest demo/module-08/09_coverage.py -v \\")
-    print("    --cov=demo/module-08/09_coverage \\")
+    print("    --cov=demo \\")
     print("    --cov-report=term-missing")
     print()
 
 
-def main() -> None:
+def main() -> None:  # pragma: no cover
     demo_coverage_output()
 
     print("═" * 78)
